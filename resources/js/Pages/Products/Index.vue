@@ -5,14 +5,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue';
 
 const props = defineProps({
-    products: {
-        type: Object,
-        required: true,
-    },
-    filters: {
-        type: Object,
-        default: () => ({}),
-    },
+    products: { type: Object, required: true },
+    filters:  { type: Object, default: () => ({}) },
 });
 
 const search = ref(props.filters.search || '');
@@ -35,10 +29,15 @@ function destroyProduct(product) {
     if (!confirm(`Hapus produk "${product.name}"?`)) return;
     router.delete(route('products.destroy', product.id));
 }
+
+function productImage(product) {
+    if (product.image) return `/storage/${product.image}`;
+    return null;
+}
 </script>
 
 <template>
-    <Head title="Products" />
+    <Head title="Produk" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -70,14 +69,12 @@ function destroyProduct(product) {
                 {{ $page.props.flash.error }}
             </div>
 
+            <!-- Search -->
             <div class="flex gap-3">
                 <div class="relative w-full max-w-sm">
                     <svg
                         class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
+                        fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
                     >
                         <circle cx="11" cy="11" r="8" />
                         <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35" />
@@ -92,42 +89,48 @@ function destroyProduct(product) {
                 <button class="btn-secondary" @click="submitSearch">Cari</button>
             </div>
 
+            <!-- Table -->
             <div class="table-wrap">
                 <table class="app-table">
                     <thead>
                         <tr>
                             <th>Foto</th>
                             <th>Nama Produk</th>
+                            <th>SKU</th>
                             <th>Kategori</th>
-                            <th>Harga</th>
+                            <th>Harga Jual</th>
+                            <th>Harga Beli</th>
                             <th>Stok</th>
-                            <th>Status</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr v-for="product in products.data" :key="product.id">
+                            <!-- Image -->
                             <td>
-                                <div class="flex h-[50px] w-[50px] items-center justify-center rounded-[10px] bg-surface-800">
-                                    <svg
-                                        width="20"
-                                        height="20"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="#57534e"
-                                        stroke-width="1.5"
-                                    >
-                                        <path
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                            d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                        />
-                                    </svg>
+                                <div class="h-[50px] w-[50px] flex-shrink-0 overflow-hidden rounded-[10px] bg-surface-800">
+                                    <img
+                                        v-if="productImage(product)"
+                                        :src="productImage(product)"
+                                        :alt="product.name"
+                                        class="h-full w-full object-cover"
+                                    />
+                                    <div v-else class="flex h-full w-full items-center justify-center">
+                                        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="#57534e" stroke-width="1.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
                                 </div>
                             </td>
+                            <!-- Name -->
                             <td>
                                 <span class="font-semibold">{{ product.name }}</span>
                             </td>
+                            <!-- SKU -->
+                            <td>
+                                <span class="mono text-xs text-stone-500">{{ product.sku }}</span>
+                            </td>
+                            <!-- Category -->
                             <td>
                                 <span
                                     v-if="product.category?.name"
@@ -137,9 +140,15 @@ function destroyProduct(product) {
                                 </span>
                                 <span v-else class="text-stone-500">-</span>
                             </td>
+                            <!-- Sell price -->
                             <td class="mono font-semibold text-brand-400">
                                 {{ currency.format(product.sell_price) }}
                             </td>
+                            <!-- Buy price -->
+                            <td class="mono text-stone-400">
+                                {{ product.buy_price ? currency.format(product.buy_price) : '-' }}
+                            </td>
+                            <!-- Stock -->
                             <td>
                                 <span
                                     class="mono font-semibold"
@@ -148,11 +157,7 @@ function destroyProduct(product) {
                                     {{ product.stock }}
                                 </span>
                             </td>
-                            <td>
-                                <span class="badge bg-emerald-500/10 text-emerald-400">
-                                    Aktif
-                                </span>
-                            </td>
+                            <!-- Actions -->
                             <td>
                                 <div class="flex gap-2">
                                     <Link
@@ -183,7 +188,7 @@ function destroyProduct(product) {
                             </td>
                         </tr>
                         <tr v-if="products.data.length === 0">
-                            <td colspan="7" class="py-6 text-center text-sm text-stone-500">
+                            <td colspan="8" class="py-6 text-center text-sm text-stone-500">
                                 Belum ada produk.
                             </td>
                         </tr>

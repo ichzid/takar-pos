@@ -7,6 +7,10 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 const showingNavigationDropdown = ref(false);
 const page = usePage();
+
+// ─── Theme Management ────────────────────────────────────────────────────────
+// Theme is driven by store_settings (admin can change in /settings).
+// Falls back to localStorage for instant load, then syncs from server.
 const theme = ref('dark');
 
 const applyTheme = (value) => {
@@ -14,29 +18,28 @@ const applyTheme = (value) => {
     document.body.classList.add(`theme-${value}`);
 };
 
-const toggleTheme = () => {
-    theme.value = theme.value === 'dark' ? 'light' : 'dark';
-};
-
 onMounted(() => {
-    const saved = localStorage.getItem('kashier-theme');
+    // Use localStorage first for instant paint, then trust server value
+    const serverTheme = page.props.store_settings?.theme;
+    const localTheme  = localStorage.getItem('kashier-theme');
+    const resolved    = serverTheme ?? localTheme ?? 'dark';
+    theme.value       = resolved;
+    applyTheme(resolved);
+});
 
-    if (saved === 'light' || saved === 'dark') {
-        theme.value = saved;
+// If store_settings.theme changes (e.g. after Settings page save), re-apply
+watch(() => page.props.store_settings?.theme, (val) => {
+    if (val && val !== theme.value) {
+        theme.value = val;
+        localStorage.setItem('kashier-theme', val);
+        applyTheme(val);
     }
-
-    applyTheme(theme.value);
 });
 
-watch(theme, (value) => {
-    localStorage.setItem('kashier-theme', value);
-    applyTheme(value);
-});
-
+// ─── Navigation ──────────────────────────────────────────────────────────────
 const userInitials = computed(() => {
     const name = page.props.auth.user?.name ?? '';
     if (!name.trim()) return 'U';
-
     return name
         .trim()
         .split(' ')
@@ -46,53 +49,92 @@ const userInitials = computed(() => {
         .toUpperCase();
 });
 
-const navItems = computed(() => {
-    const items = [
+const navSections = computed(() => {
+    const sections = [
         {
-            key: 'dashboard',
-            label: 'Dashboard',
-            href: route('dashboard'),
-            active: 'dashboard',
-            adminOnly: false,
-            icon: 'grid',
+            key: 'utama',
+            label: 'Utama',
+            items: [
+                {
+                    key: 'dashboard',
+                    label: 'Dashboard',
+                    href: route('dashboard'),
+                    active: 'dashboard',
+                    adminOnly: false,
+                    icon: 'grid',
+                },
+                {
+                    key: 'pos',
+                    label: 'POS',
+                    href: route('pos.index'),
+                    active: 'pos.*',
+                    adminOnly: false,
+                    icon: 'receipt',
+                },
+                {
+                    key: 'orders',
+                    label: 'Transaksi',
+                    href: route('orders.index'),
+                    active: 'orders.*',
+                    adminOnly: true,
+                    icon: 'clipboard',
+                },
+            ],
         },
         {
-            key: 'pos',
-            label: 'POS',
-            href: route('pos.index'),
-            active: 'pos.*',
-            adminOnly: false,
-            icon: 'receipt',
+            key: 'master-data',
+            label: 'Master Data',
+            items: [
+                {
+                    key: 'products',
+                    label: 'Produk',
+                    href: route('products.index'),
+                    active: 'products.*',
+                    adminOnly: true,
+                    icon: 'box',
+                },
+                {
+                    key: 'categories',
+                    label: 'Kategori',
+                    href: route('categories.index'),
+                    active: 'categories.*',
+                    adminOnly: true,
+                    icon: 'tag',
+                },
+                {
+                    key: 'users',
+                    label: 'Pengguna',
+                    href: route('users.index'),
+                    active: 'users.*',
+                    adminOnly: true,
+                    icon: 'users',
+                },
+            ],
         },
         {
-            key: 'products',
-            label: 'Produk',
-            href: route('products.index'),
-            active: 'products.*',
-            adminOnly: true,
-            icon: 'box',
-        },
-        {
-            key: 'categories',
-            label: 'Kategori',
-            href: route('categories.index'),
-            active: 'categories.*',
-            adminOnly: true,
-            icon: 'tag',
-        },
-        {
-            key: 'orders',
-            label: 'Orders',
-            href: route('orders.index'),
-            active: 'orders.*',
-            adminOnly: true,
-            icon: 'clipboard',
+            key: 'sistem',
+            label: 'Sistem',
+            items: [
+                {
+                    key: 'settings',
+                    label: 'Pengaturan',
+                    href: route('settings.index'),
+                    active: 'settings.*',
+                    adminOnly: true,
+                    icon: 'cog',
+                },
+            ],
         },
     ];
 
     const role = page.props.auth.user?.role;
 
-    return items.filter((item) => !item.adminOnly || role === 'admin');
+    return sections
+        .map((section) => ({
+            ...section,
+            items: section.items.filter((item) => !item.adminOnly || role === 'admin'),
+        }))
+        .filter((section) => section.items.length > 0);
 });
 
 const iconPaths = {
@@ -103,98 +145,86 @@ const iconPaths = {
     tag: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z',
     clipboard:
         'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
+    users: 'M17 20h5V18a4 4 0 00-5-3.87M9 20H4V18a4 4 0 015-3.87m8-6.13a4 4 0 11-8 0 4 4 0 018 0zm6 2a3 3 0 11-6 0 3 3 0 016 0zM6 10a3 3 0 11-6 0 3 3 0 016 0z',
+    cog: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
 };
 </script>
 
 <template>
     <div class="app-shell flex h-screen overflow-hidden">
+        <!-- ─── Desktop Sidebar ─── -->
         <aside
             class="no-print hidden w-[220px] flex-shrink-0 flex-col border-r border-surface-800 bg-surface-950 p-4 md:flex"
         >
             <div class="mb-3 flex items-center gap-3 px-2 py-4">
                 <ApplicationLogo />
-                <div class="pulse-dot ms-auto"></div>
             </div>
 
-            <div class="space-y-1">
-                <NavLink
-                    v-for="item in navItems"
-                    :key="item.key"
-                    :href="item.href"
-                    :active="route().current(item.active)"
+            <div class="space-y-5">
+                <div
+                    v-for="section in navSections"
+                    :key="section.key"
+                    class="space-y-1"
                 >
-                    <svg
-                        class="h-[18px] w-[18px] flex-shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            :d="iconPaths[item.icon]"
-                        />
-                    </svg>
-                    <span>{{ item.label }}</span>
-                </NavLink>
+                    <div class="nav-section-label px-2">
+                        {{ section.label }}
+                    </div>
 
-                <Link
-                    :href="route('logout')"
-                    method="post"
-                    as="button"
-                    class="nav-item w-full"
-                >
-                    <svg
-                        class="h-[18px] w-[18px] flex-shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1"
-                        />
-                    </svg>
-                    <span>Logout</span>
-                </Link>
-            </div>
-
-            <div class="mt-auto border-t border-surface-800 pt-4">
-                <div class="px-2">
-                    <button
-                        type="button"
-                        class="inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#3d3734] bg-surface-900 text-stone-200 transition hover:bg-surface-800 hover:text-white"
-                        :title="theme === 'dark' ? 'Aktifkan light mode' : 'Aktifkan dark mode'"
-                        :aria-label="theme === 'dark' ? 'Aktifkan light mode' : 'Aktifkan dark mode'"
-                        @click="toggleTheme"
+                    <NavLink
+                        v-for="item in section.items"
+                        :key="item.key"
+                        :href="item.href"
+                        :active="route().current(item.active)"
                     >
                         <svg
-                            class="h-5 w-5"
+                            class="h-[18px] w-[18px] flex-shrink-0"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
                             stroke-width="2"
                         >
                             <path
-                                v-if="theme === 'dark'"
                                 stroke-linecap="round"
                                 stroke-linejoin="round"
-                                d="M12 3v1m0 16v1m8.66-10h-1M4.34 12h-1M18.36 18.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M12 7a5 5 0 100 10 5 5 0 000-10z"
-                            />
-                            <path
-                                v-else
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"
+                                :d="iconPaths[item.icon]"
                             />
                         </svg>
-                    </button>
+                        <span>{{ item.label }}</span>
+                    </NavLink>
                 </div>
 
-                <div class="mt-4 flex items-center gap-3 px-2">
+                <div class="space-y-1">
+                    <div class="nav-section-label px-2">
+                        Akun
+                    </div>
+
+                    <Link
+                        :href="route('logout')"
+                        method="post"
+                        as="button"
+                        class="nav-item w-full"
+                    >
+                        <svg
+                            class="h-[18px] w-[18px] flex-shrink-0"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            stroke-width="2"
+                        >
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1"
+                            />
+                        </svg>
+                        <span>Logout</span>
+                    </Link>
+                </div>
+            </div>
+
+            <!-- User profile -->
+            <div class="mt-auto border-t border-surface-800 pt-4">
+                <div class="flex items-center gap-3 px-2">
                     <div
                         class="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-xs font-bold text-white"
                     >
@@ -204,7 +234,7 @@ const iconPaths = {
                         <div class="truncate text-xs font-semibold text-surface-50">
                             {{ $page.props.auth.user.name }}
                         </div>
-                        <div class="text-xs text-stone-500">
+                        <div class="text-xs capitalize text-stone-500">
                             {{ $page.props.auth.user.role }}
                         </div>
                     </div>
@@ -212,78 +242,46 @@ const iconPaths = {
             </div>
         </aside>
 
-        <div class="main-panel">
+        <!-- ─── Main Content ─── -->
+        <div class="main-panel flex flex-col">
+            <!-- Mobile top bar -->
             <div
                 class="no-print flex items-center justify-between border-b border-surface-800 bg-surface-950 px-4 py-3 md:hidden"
             >
                 <Link :href="route('dashboard')" class="inline-flex">
                     <ApplicationLogo />
                 </Link>
-                <div class="flex items-center gap-2">
-                    <button
-                        type="button"
-                        class="btn-secondary p-2"
-                        :title="theme === 'dark' ? 'Aktifkan light mode' : 'Aktifkan dark mode'"
-                        :aria-label="theme === 'dark' ? 'Aktifkan light mode' : 'Aktifkan dark mode'"
-                        @click="toggleTheme"
-                    >
-                        <svg
-                            class="h-5 w-5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+                <button
+                    @click="showingNavigationDropdown = !showingNavigationDropdown"
+                    class="btn-secondary p-2"
+                    type="button"
+                >
+                    <svg class="h-5 w-5" stroke="currentColor" fill="none" viewBox="0 0 24 24">
+                        <path
+                            :class="{
+                                hidden: showingNavigationDropdown,
+                                'inline-flex': !showingNavigationDropdown,
+                            }"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
                             stroke-width="2"
-                        >
-                            <path
-                                v-if="theme === 'dark'"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="M12 3v1m0 16v1m8.66-10h-1M4.34 12h-1M18.36 18.36l-.7-.7M6.34 6.34l-.7-.7m12.72 0l-.7.7M6.34 17.66l-.7.7M12 7a5 5 0 100 10 5 5 0 000-10z"
-                            />
-                            <path
-                                v-else
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                d="M21 12.79A9 9 0 1111.21 3a7 7 0 109.79 9.79z"
-                            />
-                        </svg>
-                    </button>
-                    <button
-                        @click="showingNavigationDropdown = !showingNavigationDropdown"
-                        class="btn-secondary p-2"
-                        type="button"
-                    >
-                        <svg
-                            class="h-5 w-5"
-                            stroke="currentColor"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                :class="{
-                                    hidden: showingNavigationDropdown,
-                                    'inline-flex': !showingNavigationDropdown,
-                                }"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M4 6h16M4 12h16M4 18h16"
-                            />
-                            <path
-                                :class="{
-                                    hidden: !showingNavigationDropdown,
-                                    'inline-flex': showingNavigationDropdown,
-                                }"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                stroke-width="2"
-                                d="M6 18L18 6M6 6l12 12"
-                            />
-                        </svg>
-                    </button>
-                </div>
+                            d="M4 6h16M4 12h16M4 18h16"
+                        />
+                        <path
+                            :class="{
+                                hidden: !showingNavigationDropdown,
+                                'inline-flex': showingNavigationDropdown,
+                            }"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"
+                        />
+                    </svg>
+                </button>
             </div>
 
+            <!-- Mobile dropdown menu -->
             <div
                 :class="{
                     block: showingNavigationDropdown,
@@ -291,22 +289,39 @@ const iconPaths = {
                 }"
                 class="no-print border-b border-surface-800 bg-surface-950 px-4 py-3 md:hidden"
             >
-                <div class="space-y-2">
-                    <ResponsiveNavLink
-                        v-for="item in navItems"
-                        :key="`m-${item.key}`"
-                        :href="item.href"
-                        :active="route().current(item.active)"
+                <div class="space-y-4">
+                    <div
+                        v-for="section in navSections"
+                        :key="`m-${section.key}`"
+                        class="space-y-2"
                     >
-                        {{ item.label }}
-                    </ResponsiveNavLink>
-                    <ResponsiveNavLink
-                        :href="route('logout')"
-                        method="post"
-                        as="button"
-                    >
-                        Log Out
-                    </ResponsiveNavLink>
+                        <div class="nav-section-label px-1">
+                            {{ section.label }}
+                        </div>
+
+                        <ResponsiveNavLink
+                            v-for="item in section.items"
+                            :key="`m-${item.key}`"
+                            :href="item.href"
+                            :active="route().current(item.active)"
+                        >
+                            {{ item.label }}
+                        </ResponsiveNavLink>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="nav-section-label px-1">
+                            Akun
+                        </div>
+
+                        <ResponsiveNavLink
+                            :href="route('logout')"
+                            method="post"
+                            as="button"
+                        >
+                            Log Out
+                        </ResponsiveNavLink>
+                    </div>
                 </div>
             </div>
 
@@ -314,7 +329,7 @@ const iconPaths = {
                 <slot name="header" />
             </header>
 
-            <main class="fade-up">
+            <main class="fade-up flex-1 min-h-0 flex flex-col">
                 <slot />
             </main>
         </div>

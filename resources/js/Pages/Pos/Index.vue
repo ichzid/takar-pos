@@ -1,12 +1,16 @@
 <script setup>
-import { Head, router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { computed, ref, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
 const props = defineProps({
     taxRate: {
         type: Number,
         default: 0.1,
+    },
+    taxEnabled: {
+        type: Boolean,
+        default: true,
     },
     categories: {
         type: Array,
@@ -18,11 +22,18 @@ const props = defineProps({
     },
 });
 
-const search = ref('');
+const search          = ref('');
 const selectedCategory = ref('all');
-const activePanel = ref('products');
-const cart = ref([]);
-const paidAmount = ref(0);
+const activePanel     = ref('products');
+const cart            = ref([]);
+const paidAmount      = ref(0);
+
+// Cart extras
+const customerName  = ref('');
+const orderNote     = ref('');
+const discountType  = ref('rp');   // 'rp' | 'pct'
+const discountValue = ref(0);
+const showExtras    = ref(false);
 
 const currency = new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -30,17 +41,24 @@ const currency = new Intl.NumberFormat('id-ID', {
     maximumFractionDigits: 0,
 });
 
+// ─── Category bar ref for wheel scroll ────────────────────────────────────
+const categoryBar = ref(null);
+function onCategoryWheel(e) {
+    if (!categoryBar.value) return;
+    e.preventDefault();
+    categoryBar.value.scrollLeft += e.deltaY * 1.5;
+}
+
+// ─── Computed ─────────────────────────────────────────────────────────────
 const displayedProducts = computed(() => {
     const q = search.value.trim().toLowerCase();
-
     return props.products.filter((product) => {
-        const name = String(product.name ?? '').toLowerCase();
-        const sku = String(product.sku ?? '').toLowerCase();
+        const name       = String(product.name ?? '').toLowerCase();
+        const sku        = String(product.sku  ?? '').toLowerCase();
         const byCategory =
             selectedCategory.value === 'all' ||
             product.category_id === selectedCategory.value;
         const bySearch = q.length === 0 || name.includes(q) || sku.includes(q);
-
         return byCategory && bySearch;
     });
 });
@@ -48,60 +66,54 @@ const displayedProducts = computed(() => {
 const subtotal = computed(() =>
     cart.value.reduce((sum, item) => sum + item.unit_price * item.quantity, 0),
 );
-const taxAmount = computed(
-    () => Math.round(subtotal.value * props.taxRate * 100) / 100,
-);
-const total = computed(() => subtotal.value + taxAmount.value);
+
+const discountAmount = computed(() => {
+    if (discountValue.value <= 0) return 0;
+    if (discountType.value === 'pct') {
+        return Math.round((subtotal.value * Math.min(discountValue.value, 100)) / 100);
+    }
+    return Math.min(discountValue.value, subtotal.value);
+});
+
+const taxAmount = computed(() => {
+    if (!props.taxEnabled) return 0;
+    return Math.round((subtotal.value - discountAmount.value) * props.taxRate * 100) / 100;
+});
+
+const total        = computed(() => subtotal.value - discountAmount.value + taxAmount.value);
 const changeAmount = computed(() => Math.max(0, paidAmount.value - total.value));
-const cartCount = computed(() =>
-    cart.value.reduce((sum, item) => sum + item.quantity, 0),
-);
-const canCheckout = computed(
+const cartCount    = computed(() => cart.value.reduce((sum, item) => sum + item.quantity, 0));
+const canCheckout  = computed(
     () => cart.value.length > 0 && paidAmount.value >= total.value,
 );
 
-const isInCart = (productId) =>
-    cart.value.find((item) => item.product_id === productId);
+const isInCart = (productId) => cart.value.find((item) => item.product_id === productId);
 
-function setCategory(categoryId) {
-    selectedCategory.value = categoryId;
-}
-
-function showProducts() {
-    activePanel.value = 'products';
-}
-
-function showCart() {
-    activePanel.value = 'cart';
-}
+// ─── Actions ──────────────────────────────────────────────────────────────
+function setCategory(id)  { selectedCategory.value = id; }
+function showProducts()   { activePanel.value = 'products'; }
+function showCart()       { activePanel.value = 'cart'; }
 
 function addToCart(product) {
     if (product.stock <= 0) return;
-
     const existing = cart.value.find((item) => item.product_id === product.id);
-
     if (existing) {
         if (existing.quantity >= product.stock) return;
         existing.quantity += 1;
         return;
     }
-
     cart.value.push({
         product_id: product.id,
-        name: product.name,
+        name:       product.name,
         unit_price: Number(product.sell_price),
-        quantity: 1,
-        stock: product.stock,
+        quantity:   1,
+        stock:      product.stock,
     });
 }
 
 function changeQty(item, delta) {
     const nextQty = item.quantity + delta;
-    if (nextQty <= 0) {
-        removeItem(item.product_id);
-        return;
-    }
-
+    if (nextQty <= 0) { removeItem(item.product_id); return; }
     item.quantity = Math.min(nextQty, item.stock);
 }
 
@@ -110,53 +122,57 @@ function removeItem(productId) {
 }
 
 function clearCart() {
-    cart.value = [];
-    paidAmount.value = 0;
+    cart.value      = [];
+    paidAmount.value    = 0;
+    customerName.value  = '';
+    orderNote.value     = '';
+    discountValue.value = 0;
+    discountType.value  = 'rp';
+    showExtras.value    = false;
 }
 
-function setExactPay() {
-    paidAmount.value = total.value;
-}
-
-function addPay(amount) {
-    paidAmount.value = Math.max(0, (paidAmount.value || 0)) + amount;
-}
+function setExactPay() { paidAmount.value = total.value; }
+function addPay(amount) { paidAmount.value = Math.max(0, (paidAmount.value || 0)) + amount; }
 
 function checkout() {
     if (!canCheckout.value) return;
-
     router.post(
         route('pos.checkout'),
         {
             items: cart.value.map((item) => ({
                 product_id: item.product_id,
-                quantity: item.quantity,
+                quantity:   item.quantity,
             })),
-            tax_rate: props.taxRate,
-            paid_amount: paidAmount.value,
+            tax_rate:        props.taxRate,
+            paid_amount:     paidAmount.value,
+            discount_amount: discountAmount.value,
+            customer_name:   customerName.value || null,
+            note:            orderNote.value    || null,
         },
-        {
-            onSuccess: () => {
-                clearCart();
-            },
-        },
+        { onSuccess: () => clearCart() },
     );
 }
+
+const checkoutLabel = computed(() => {
+    if (cart.value.length === 0) return 'Keranjang Kosong';
+    if (paidAmount.value < total.value) return 'Bayar Kurang';
+    return 'Bayar Sekarang';
+});
 </script>
 
 <template>
     <Head title="POS" />
 
     <AuthenticatedLayout>
+        <!-- pos-shell fills viewport minus navbar; no extra footer gap -->
         <section class="pos-shell flex flex-col overflow-hidden lg:flex-row">
+
             <!-- ─── Mobile Tab Bar ─── -->
             <div class="border-b border-surface-800 bg-surface-950 px-4 py-3 lg:hidden">
                 <div class="grid grid-cols-2 gap-2">
                     <button
-                        class="relative flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200"
-                        :class="activePanel === 'products'
-                            ? 'bg-brand-500 text-white shadow-[0_4px_16px_rgba(249,115,22,0.3)]'
-                            : 'bg-surface-800 text-stone-400 hover:bg-surface-700 hover:text-stone-200'"
+                        class="pos-tab"
+                        :class="{ 'pos-tab-active': activePanel === 'products' }"
                         @click="showProducts"
                     >
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -165,10 +181,8 @@ function checkout() {
                         Produk
                     </button>
                     <button
-                        class="relative flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200"
-                        :class="activePanel === 'cart'
-                            ? 'bg-brand-500 text-white shadow-[0_4px_16px_rgba(249,115,22,0.3)]'
-                            : 'bg-surface-800 text-stone-400 hover:bg-surface-700 hover:text-stone-200'"
+                        class="pos-tab"
+                        :class="{ 'pos-tab-active': activePanel === 'cart' }"
                         @click="showCart"
                     >
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -190,37 +204,39 @@ function checkout() {
                 :class="activePanel === 'products' ? 'flex' : 'hidden lg:flex'"
                 class="min-h-0 flex-1 flex-col overflow-hidden"
             >
-                <!-- Header -->
+                <!-- Search + Categories -->
                 <div class="border-b border-surface-800 bg-surface-950 px-6 py-4">
-                    <div class="mb-3 flex items-center gap-3">
-                        <!-- Search -->
-                        <div class="relative flex-1">
-                            <svg
-                                class="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500"
-                                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
-                            >
-                                <circle cx="11" cy="11" r="8" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35" />
+                    <!-- Search -->
+                    <div class="relative mb-3">
+                        <svg
+                            class="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500"
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                        >
+                            <circle cx="11" cy="11" r="8" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35" />
+                        </svg>
+                        <input
+                            v-model="search"
+                            class="input-base pl-10"
+                            placeholder="Cari nama produk atau SKU..."
+                        />
+                        <button
+                            v-if="search"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 transition-colors hover:text-stone-300"
+                            @click="search = ''"
+                        >
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                             </svg>
-                            <input
-                                v-model="search"
-                                class="input-base pl-10"
-                                placeholder="Cari nama produk atau SKU..."
-                            />
-                            <button
-                                v-if="search"
-                                class="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-300 transition-colors"
-                                @click="search = ''"
-                            >
-                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
+                        </button>
                     </div>
 
-                    <!-- Category chips — scrollable row -->
-                    <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    <!-- Category chips — wheel-scrollable -->
+                    <div
+                        ref="categoryBar"
+                        class="relative flex gap-2 overflow-x-auto pb-2 scrollbar-thin"
+                        @wheel.prevent="onCategoryWheel"
+                    >
                         <button
                             class="chip flex-shrink-0"
                             :class="{ 'chip-active': selectedCategory === 'all' }"
@@ -242,33 +258,30 @@ function checkout() {
                         </button>
                     </div>
 
-                    <!-- Product count info -->
                     <div class="mt-2 text-[11px] text-stone-600">
                         Menampilkan {{ displayedProducts.length }} produk
-                        <span v-if="search"> untuk "<span class="text-brand-400">{{ search }}</span>"</span>
+                        <span v-if="search">untuk "<span class="text-brand-400">{{ search }}</span>"</span>
                     </div>
                 </div>
 
                 <!-- Product Grid -->
                 <div class="flex-1 overflow-y-auto p-4">
-                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 content-start">
+                    <div class="grid gap-3 content-start sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         <button
                             v-for="product in displayedProducts"
                             :key="product.id"
                             class="product-card text-left transition-all duration-200"
                             :class="{
-                                'product-card-in-cart': isInCart(product.id),
+                                'product-card-in-cart':      isInCart(product.id),
                                 'product-card-out-of-stock': product.stock <= 0,
                             }"
                             @click="addToCart(product)"
                         >
-                            <!-- Thumbnail area -->
+                            <!-- Thumbnail -->
                             <div class="relative flex h-[100px] w-full items-center justify-center bg-surface-800">
                                 <svg width="30" height="30" fill="none" viewBox="0 0 24 24" stroke="#57534e" stroke-width="1.5">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                 </svg>
-
-                                <!-- "In cart" checkmark badge -->
                                 <div
                                     v-if="isInCart(product.id)"
                                     class="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-brand-500 shadow-lg"
@@ -277,15 +290,11 @@ function checkout() {
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
                                     </svg>
                                 </div>
-
-                                <!-- "Habis" overlay on zero-stock product -->
                                 <div
                                     v-if="product.stock <= 0"
                                     class="absolute inset-0 flex items-center justify-center bg-surface-950/70"
                                 >
-                                    <span class="rounded-full bg-red-500/20 px-3 py-1 text-xs font-bold text-red-400 ring-1 ring-red-500/40">
-                                        Habis
-                                    </span>
+                                    <span class="rounded-full bg-red-500/20 px-3 py-1 text-xs font-bold text-red-400 ring-1 ring-red-500/40">Habis</span>
                                 </div>
                             </div>
 
@@ -312,10 +321,7 @@ function checkout() {
                                         </svg>
                                         Stok: {{ product.stock }}
                                     </div>
-                                    <div
-                                        v-if="isInCart(product.id)"
-                                        class="badge bg-brand-500/15 text-brand-400"
-                                    >
+                                    <div v-if="isInCart(product.id)" class="badge bg-brand-500/15 text-brand-400">
                                         ×{{ isInCart(product.id).quantity }}
                                     </div>
                                 </div>
@@ -358,10 +364,7 @@ function checkout() {
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
                             <h2 class="text-base font-extrabold">Keranjang</h2>
-                            <span
-                                v-if="cartCount > 0"
-                                class="badge bg-brand-500/15 text-brand-400"
-                            >{{ cartCount }} item</span>
+                            <span v-if="cartCount > 0" class="badge bg-brand-500/15 text-brand-400">{{ cartCount }} item</span>
                         </div>
                         <button
                             class="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-stone-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
@@ -375,88 +378,166 @@ function checkout() {
                     </div>
                 </div>
 
-                <!-- Cart items -->
-                <div class="min-h-0 flex-1 overflow-y-auto p-4">
-                    <!-- Empty cart -->
-                    <div
-                        v-if="cart.length === 0"
-                        class="flex h-full flex-col items-center justify-center py-16 text-center"
-                    >
-                        <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-800 opacity-60">
-                            <svg class="h-8 w-8 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                <!-- Cart items + extras (scrollable) -->
+                <div class="min-h-0 flex-1 overflow-y-auto">
+                    <!-- Customer / Note / Discount accordion -->
+                    <div class="border-b border-surface-800 px-5 py-3">
+                        <button
+                            class="flex w-full items-center justify-between text-xs font-semibold text-stone-400 transition-colors hover:text-stone-200"
+                            @click="showExtras = !showExtras"
+                        >
+                            <span class="flex items-center gap-1.5">
+                                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                Pelanggan &amp; Catatan
+                                <span v-if="customerName || orderNote || discountValue > 0" class="h-1.5 w-1.5 rounded-full bg-brand-400"></span>
+                            </span>
+                            <svg
+                                class="h-4 w-4 transition-transform duration-200"
+                                :class="showExtras ? 'rotate-180' : ''"
+                                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                            >
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
                             </svg>
+                        </button>
+
+                        <div v-if="showExtras" class="mt-3 space-y-3">
+                            <!-- Customer name -->
+                            <div>
+                                <label class="mb-1 block text-xs text-stone-500">Nama Pelanggan (opsional)</label>
+                                <input
+                                    v-model="customerName"
+                                    class="input-base text-sm"
+                                    placeholder="Mis. Budi Santoso"
+                                    type="text"
+                                />
+                            </div>
+
+                            <!-- Note -->
+                            <div>
+                                <label class="mb-1 block text-xs text-stone-500">Catatan (opsional)</label>
+                                <textarea
+                                    v-model="orderNote"
+                                    class="input-base text-sm"
+                                    placeholder="Mis. Tanpa gula, extra es..."
+                                    rows="2"
+                                    style="resize:none"
+                                />
+                            </div>
+
+                            <!-- Discount -->
+                            <div>
+                                <label class="mb-1 block text-xs text-stone-500">Diskon</label>
+                                <div class="flex gap-1.5">
+                                    <!-- Toggle Rp / % -->
+                                    <button
+                                        class="flex-shrink-0 rounded-lg border px-3 text-xs font-semibold transition-colors"
+                                        :class="discountType === 'rp'
+                                            ? 'border-brand-500 bg-brand-500/10 text-brand-400'
+                                            : 'border-surface-700 bg-surface-800 text-stone-400 hover:border-surface-600'"
+                                        type="button"
+                                        @click="discountType = 'rp'"
+                                    >Rp</button>
+                                    <button
+                                        class="flex-shrink-0 rounded-lg border px-3 text-xs font-semibold transition-colors"
+                                        :class="discountType === 'pct'
+                                            ? 'border-brand-500 bg-brand-500/10 text-brand-400'
+                                            : 'border-surface-700 bg-surface-800 text-stone-400 hover:border-surface-600'"
+                                        type="button"
+                                        @click="discountType = 'pct'"
+                                    >%</button>
+                                    <input
+                                        v-model.number="discountValue"
+                                        class="input-base mono flex-1 text-sm"
+                                        :placeholder="discountType === 'rp' ? '0' : '0'"
+                                        type="number"
+                                        min="0"
+                                    />
+                                </div>
+                                <div v-if="discountAmount > 0" class="mt-1 text-right text-xs text-emerald-400">
+                                    Diskon: {{ currency.format(discountAmount) }}
+                                </div>
+                            </div>
                         </div>
-                        <div class="text-sm font-semibold text-stone-500">Keranjang masih kosong</div>
-                        <div class="mt-1 text-xs text-stone-600">Tap produk untuk menambahkan</div>
                     </div>
 
                     <!-- Cart item list -->
-                    <div v-else class="space-y-2">
+                    <div class="p-4">
                         <div
-                            v-for="item in cart"
-                            :key="item.product_id"
-                            class="cart-item-row flex items-center gap-3 rounded-xl border border-surface-800 bg-surface-900 p-3 transition-all duration-200 hover:border-surface-700"
+                            v-if="cart.length === 0"
+                            class="flex flex-col items-center justify-center py-16 text-center"
                         >
-                            <!-- icon -->
-                            <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-surface-800">
-                                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#57534e" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-800 opacity-60">
+                                <svg class="h-8 w-8 text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                                 </svg>
                             </div>
+                            <div class="text-sm font-semibold text-stone-500">Keranjang masih kosong</div>
+                            <div class="mt-1 text-xs text-stone-600">Tap produk untuk menambahkan</div>
+                        </div>
 
-                            <!-- name + price -->
-                            <div class="min-w-0 flex-1">
-                                <div class="truncate text-xs font-semibold text-surface-50">{{ item.name }}</div>
-                                <div class="mono text-xs text-brand-400">
-                                    {{ currency.format(item.unit_price) }}
-                                </div>
-                            </div>
-
-                            <!-- qty controls -->
-                            <div class="flex items-center gap-1">
-                                <button
-                                    class="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-800 text-sm text-stone-300 transition-colors hover:bg-red-500/20 hover:text-red-400"
-                                    @click="changeQty(item, -1)"
-                                >−</button>
-                                <span class="mono w-7 text-center text-sm font-bold text-surface-50">
-                                    {{ item.quantity }}
-                                </span>
-                                <button
-                                    class="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-800 text-sm text-stone-300 transition-colors hover:bg-brand-500/20 hover:text-brand-400"
-                                    :disabled="item.quantity >= item.stock"
-                                    @click="changeQty(item, 1)"
-                                >+</button>
-                            </div>
-
-                            <!-- subtotal + remove -->
-                            <div class="text-right">
-                                <div class="mono text-xs font-semibold text-surface-50">
-                                    {{ currency.format(item.unit_price * item.quantity) }}
-                                </div>
-                                <button
-                                    class="mt-0.5 text-stone-700 transition-colors hover:text-red-400"
-                                    @click="removeItem(item.product_id)"
-                                >
-                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="item in cart"
+                                :key="item.product_id"
+                                class="flex items-center gap-3 rounded-xl border border-surface-800 bg-surface-900 p-3 transition-all duration-200 hover:border-surface-700"
+                            >
+                                <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-surface-800">
+                                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#57534e" stroke-width="1.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                     </svg>
-                                </button>
+                                </div>
+
+                                <div class="min-w-0 flex-1">
+                                    <div class="truncate text-xs font-semibold text-surface-50">{{ item.name }}</div>
+                                    <div class="mono text-xs text-brand-400">{{ currency.format(item.unit_price) }}</div>
+                                </div>
+
+                                <div class="flex items-center gap-1">
+                                    <button
+                                        class="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-800 text-sm text-stone-300 transition-colors hover:bg-red-500/20 hover:text-red-400"
+                                        @click="changeQty(item, -1)"
+                                    >−</button>
+                                    <span class="mono w-7 text-center text-sm font-bold text-surface-50">{{ item.quantity }}</span>
+                                    <button
+                                        class="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-800 text-sm text-stone-300 transition-colors hover:bg-brand-500/20 hover:text-brand-400"
+                                        :disabled="item.quantity >= item.stock"
+                                        @click="changeQty(item, 1)"
+                                    >+</button>
+                                </div>
+
+                                <div class="text-right">
+                                    <div class="mono text-xs font-semibold text-surface-50">
+                                        {{ currency.format(item.unit_price * item.quantity) }}
+                                    </div>
+                                    <button
+                                        class="mt-0.5 text-stone-700 transition-colors hover:text-red-400"
+                                        @click="removeItem(item.product_id)"
+                                    >
+                                        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Summary + Payment -->
+                <!-- Summary + Payment (static at bottom) -->
                 <div class="border-t border-surface-800 p-5 space-y-3">
-                    <!-- Subtotal / tax / total rows -->
                     <div class="space-y-1.5">
                         <div class="flex justify-between text-sm text-stone-400">
                             <span>Subtotal</span>
                             <span class="mono font-semibold text-stone-200">{{ currency.format(subtotal) }}</span>
                         </div>
-                        <div class="flex justify-between text-sm text-stone-400">
-                            <span>Pajak ({{ Math.round(props.taxRate * 100) }}%)</span>
+                        <div v-if="discountAmount > 0" class="flex justify-between text-sm text-emerald-400">
+                            <span>Diskon</span>
+                            <span class="mono font-semibold">− {{ currency.format(discountAmount) }}</span>
+                        </div>
+                        <div v-if="taxEnabled" class="flex justify-between text-sm text-stone-400">
+                            <span>Pajak ({{ Math.round(taxRate * 100) }}%)</span>
                             <span class="mono font-semibold text-stone-200">{{ currency.format(taxAmount) }}</span>
                         </div>
                         <div class="flex justify-between rounded-xl bg-surface-900 px-3 py-2.5 text-base font-extrabold">
@@ -475,21 +556,10 @@ function checkout() {
                             type="number"
                             min="0"
                         />
-
-                        <!-- Quick-pay shortcuts -->
                         <div class="mt-2 flex gap-1.5">
-                            <button
-                                class="quick-pay-btn flex-1"
-                                @click="setExactPay"
-                            >Uang Pas</button>
-                            <button
-                                class="quick-pay-btn flex-1"
-                                @click="addPay(50000)"
-                            >+50rb</button>
-                            <button
-                                class="quick-pay-btn flex-1"
-                                @click="addPay(100000)"
-                            >+100rb</button>
+                            <button class="quick-pay-btn flex-1" @click="setExactPay">Uang Pas</button>
+                            <button class="quick-pay-btn flex-1" @click="addPay(50000)">+50rb</button>
+                            <button class="quick-pay-btn flex-1" @click="addPay(100000)">+100rb</button>
                         </div>
                     </div>
 
@@ -504,7 +574,7 @@ function checkout() {
                         </span>
                     </div>
 
-                    <!-- Checkout button -->
+                    <!-- Checkout -->
                     <button
                         class="btn-primary w-full py-3 text-base"
                         :disabled="!canCheckout"
@@ -513,10 +583,11 @@ function checkout() {
                         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
                         </svg>
-                        {{ canCheckout ? 'Bayar Sekarang' : cart.length === 0 ? 'Keranjang Kosong' : 'Bayar Kurang' }}
+                        {{ checkoutLabel }}
                     </button>
                 </div>
             </aside>
+
         </section>
     </AuthenticatedLayout>
 </template>

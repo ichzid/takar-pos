@@ -77,20 +77,36 @@
         @apply inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-stone-400 transition hover:bg-surface-800 hover:text-surface-50;
     }
 
+    .btn-login {
+        @apply inline-flex items-center justify-center rounded-[10px] border border-brand-500/20 bg-white/[0.03] px-4 py-2.5 text-sm font-semibold text-surface-50 transition duration-200;
+    }
+
+    .btn-login:hover {
+        border-color: rgba(249, 115, 22, 0.32);
+        background: rgba(249, 115, 22, 0.08);
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px -14px rgba(249, 115, 22, 0.45);
+    }
+
     .btn-danger {
         @apply inline-flex items-center justify-center rounded-lg border border-[#3d3734] bg-transparent px-[10px] py-[6px] text-xs text-red-400 transition duration-200 hover:border-red-400 hover:bg-red-500/10 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60;
     }
 
     .nav-item {
-        @apply flex cursor-pointer items-center gap-3 rounded-[10px] px-[14px] py-[10px] text-sm font-medium text-stone-400 transition duration-200;
+        @apply flex cursor-pointer items-center gap-3 rounded-[10px] border border-transparent px-[14px] py-[10px] text-sm font-medium text-stone-400 transition duration-200;
     }
 
-    .nav-item:hover {
-        @apply bg-surface-800 text-surface-50;
+    .nav-item:not(.nav-item-active):hover {
+        @apply border-surface-800 bg-surface-800 text-surface-50;
     }
 
-    .nav-item-active {
-        @apply bg-brand-500 text-white shadow-[0_4px_16px_rgba(249,115,22,0.35)];
+    .nav-item-active,
+    .nav-item-active:hover {
+        @apply border-brand-500/40 bg-[#2a170d] text-white shadow-[0_8px_20px_-12px_rgba(249,115,22,0.45)];
+    }
+
+    .nav-section-label {
+        @apply pb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-600;
     }
 
     .card {
@@ -134,9 +150,10 @@
         box-shadow: none;
     }
 
-    /* POS layout: fills remaining height after navbar */
+    /* POS layout: fills remaining height from flex parent */
     .pos-shell {
-        height: calc(100vh - 65px);
+        flex: 1;
+        min-height: 0;
         overflow: hidden;
     }
 
@@ -153,6 +170,29 @@
 
     .scrollbar-hide::-webkit-scrollbar {
         display: none;
+    }
+
+    /* Thin visible scrollbar for categories */
+    .scrollbar-thin {
+        scrollbar-width: thin;
+        scrollbar-color: #57534e transparent;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar {
+        height: 4px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+        background: #57534e;
+        border-radius: 999px;
+    }
+
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+        background: #78716c;
     }
 
     .badge {
@@ -187,12 +227,32 @@
         @apply whitespace-nowrap rounded-full border-[1.5px] border-[#3d3734] px-[14px] py-[6px] text-[13px] font-semibold text-stone-400 transition;
     }
 
-    .chip:hover {
-        @apply border-brand-500 text-brand-500;
+    .chip:not(.chip-active):hover {
+        @apply border-brand-500 bg-brand-500/5 text-brand-400;
     }
 
-    .chip-active {
-        @apply border-brand-500 bg-brand-500 text-white;
+    .chip-active,
+    .chip-active:hover {
+        @apply border-brand-500/40 bg-[#2a170d] text-brand-400 shadow-[0_6px_18px_-10px_rgba(249,115,22,0.4)];
+    }
+
+    .pos-tab {
+        @apply relative flex items-center justify-center gap-2 rounded-xl border border-transparent px-3 py-2.5 text-sm font-semibold transition-all duration-200;
+    }
+
+    .pos-tab:not(.pos-tab-active) {
+        @apply bg-surface-800 text-stone-400;
+    }
+
+    .pos-tab:not(.pos-tab-active):hover {
+        border-color: #3d3734;
+        background: #3d3734;
+        @apply text-stone-200;
+    }
+
+    .pos-tab-active,
+    .pos-tab-active:hover {
+        @apply border-brand-500/40 bg-[#2a170d] text-white shadow-[0_8px_20px_-12px_rgba(249,115,22,0.45)];
     }
 
     .mono {
@@ -230,6 +290,10 @@
 
     .receipt {
         @apply rounded-[14px] bg-white p-6 font-mono text-[13px] text-surface-900;
+    }
+
+    .receipt-card {
+        @apply rounded-2xl border border-surface-800 bg-surface-950 p-6 shadow-2xl;
     }
 
     .page-title {
@@ -287,19 +351,38 @@ body.theme-light .nav-item {
     color: #475569;
 }
 
+body.theme-light .nav-section-label {
+    color: #94a3b8;
+}
+
 body.theme-light .nav-item:hover {
     background: #f1f5f9;
     color: #0f172a;
 }
 
 body.theme-light .nav-item-active {
-    color: #ffffff;
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #c2410c;
+    box-shadow: none;
 }
 
 body.theme-light .btn-secondary {
     background: #ffffff;
     border-color: #cbd5e1;
     color: #334155;
+}
+
+body.theme-light .btn-login {
+    background: #ffffff;
+    border-color: #fdba74;
+    color: #c2410c;
+}
+
+body.theme-light .btn-login:hover {
+    background: #fff7ed;
+    border-color: #f97316;
+    box-shadow: none;
 }
 
 body.theme-light .btn-secondary:hover {
@@ -337,7 +420,34 @@ body.theme-light .chip {
 
 body.theme-light .chip:hover {
     border-color: #f97316;
+    background: #fff7ed;
     color: #f97316;
+}
+
+body.theme-light .chip-active {
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #c2410c;
+    box-shadow: none;
+}
+
+body.theme-light .pos-tab:not(.pos-tab-active) {
+    background: #f8fafc;
+    border-color: transparent;
+    color: #64748b;
+}
+
+body.theme-light .pos-tab:not(.pos-tab-active):hover {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #0f172a;
+}
+
+body.theme-light .pos-tab-active {
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #c2410c;
+    box-shadow: none;
 }
 
 body.theme-light .bg-surface-950 {
@@ -382,12 +492,42 @@ body.theme-light .text-stone-500 {
     color: #64748b !important;
 }
 
-body.theme-light .text-stone-400 {
+body.theme-light .text-stone-600 {
     color: #64748b !important;
 }
 
-body.theme-light .text-stone-300 {
-    color: #334155 !important;
+body.theme-light .text-stone-700 {
+    color: #475569 !important;
+}
+
+body.theme-light .text-stone-200 {
+    color: #1e293b !important;
+}
+
+body.theme-light .border-surface-700 {
+    border-color: #e2e8f0 !important;
+}
+
+/* Sidebar + POS left panel in light mode */
+body.theme-light aside {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+}
+
+body.theme-light .receipt-card {
+    background: #ffffff !important;
+    border-color: #e2e8f0 !important;
+    color: #0f172a !important;
+}
+
+/* Product card thumbnail bg in light mode */
+body.theme-light .product-card {
+    background: #ffffff;
+    border-color: #e2e8f0;
+}
+
+body.theme-light .product-card:hover {
+    border-color: #f97316;
 }
 
 @media print {

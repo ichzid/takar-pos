@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
@@ -9,6 +9,9 @@ const props = defineProps({
         required: true,
     },
 });
+
+const page = usePage();
+const s    = page.props.store_settings ?? {};
 
 const currency = new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -20,7 +23,7 @@ const orderDate = computed(() => {
     if (!props.order?.created_at) return '-';
     return new Date(props.order.created_at).toLocaleString('id-ID', {
         day: '2-digit',
-        month: 'short',
+        month: 'long',
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
@@ -36,8 +39,8 @@ function printReceipt() {
     <Head title="Struk Transaksi" />
 
     <AuthenticatedLayout>
-        <div class="page-wrap printable-receipt mx-auto max-w-xl">
-            <!-- Action bar -->
+        <div class="page-wrap printable-receipt mx-auto max-w-md">
+            <!-- Action bar (hidden on print) -->
             <div class="mb-6 flex items-center justify-between no-print">
                 <div>
                     <h1 class="page-title text-xl">Struk Transaksi</h1>
@@ -47,7 +50,7 @@ function printReceipt() {
                     <Link :href="route('pos.index')" class="btn-secondary">
                         ← Kembali ke POS
                     </Link>
-                    <button class="btn-primary" @click="printReceipt">
+                    <button class="btn-primary flex items-center gap-2" @click="printReceipt">
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                         </svg>
@@ -60,15 +63,17 @@ function printReceipt() {
             <div class="receipt">
                 <!-- Store header -->
                 <div class="mb-5 border-b border-dashed border-slate-300 pb-4 text-center">
-                    <div class="text-xl font-extrabold tracking-tight">KasirKu</div>
-                    <div class="mt-0.5 text-xs text-slate-500">Point of Sale System</div>
+                    <div class="text-xl font-extrabold tracking-tight">
+                        {{ s.store_name || 'KasirKu' }}
+                    </div>
+                    <div v-if="s.store_address" class="mt-0.5 text-xs text-slate-500">{{ s.store_address }}</div>
+                    <div v-if="s.store_phone"   class="text-xs text-slate-500">{{ s.store_phone }}</div>
                 </div>
 
                 <!-- Order meta -->
                 <div class="mb-4 space-y-1.5">
                     <div class="flex justify-between text-xs">
                         <span class="text-slate-500">No. Order</span>
-                        <!-- FIX: was order.id (integer), now shows correct order_number -->
                         <span class="font-bold tracking-wide">{{ order.order_number }}</span>
                     </div>
                     <div class="flex justify-between text-xs">
@@ -78,6 +83,10 @@ function printReceipt() {
                     <div class="flex justify-between text-xs">
                         <span class="text-slate-500">Kasir</span>
                         <span>{{ order.user?.name || '—' }}</span>
+                    </div>
+                    <div v-if="order.customer_name" class="flex justify-between text-xs">
+                        <span class="text-slate-500">Pelanggan</span>
+                        <span>{{ order.customer_name }}</span>
                     </div>
                 </div>
 
@@ -97,7 +106,7 @@ function printReceipt() {
                                 </div>
                             </div>
                             <div class="flex-shrink-0 text-right font-semibold">
-                                {{ currency.format(Number(detail.subtotal) || 0) }}
+                                {{ currency.format(Number(detail.line_total) || 0) }}
                             </div>
                         </div>
                     </div>
@@ -109,12 +118,19 @@ function printReceipt() {
                         <span>Subtotal</span>
                         <span>{{ currency.format(Number(order.subtotal) || 0) }}</span>
                     </div>
+                    <div
+                        v-if="Number(order.discount_amount) > 0"
+                        class="flex justify-between text-emerald-600"
+                    >
+                        <span>Diskon</span>
+                        <span>− {{ currency.format(Number(order.discount_amount)) }}</span>
+                    </div>
                     <div class="flex justify-between text-slate-500">
                         <span>Pajak</span>
                         <span>{{ currency.format(Number(order.tax_amount) || 0) }}</span>
                     </div>
                     <div class="flex justify-between border-t border-dashed border-slate-300 pt-2 font-bold">
-                        <span>Total</span>
+                        <span>TOTAL</span>
                         <span>{{ currency.format(Number(order.total) || 0) }}</span>
                     </div>
                     <div class="flex justify-between text-slate-500">
@@ -127,9 +143,14 @@ function printReceipt() {
                     </div>
                 </div>
 
-                <!-- Footer -->
+                <!-- Note -->
+                <div v-if="order.note" class="mt-4 border-t border-dashed border-slate-300 pt-3 text-xs text-slate-500">
+                    <span class="font-semibold">Catatan:</span> {{ order.note }}
+                </div>
+
+                <!-- Footer message -->
                 <div class="mt-6 border-t border-dashed border-slate-300 pt-4 text-center text-[11px] text-slate-400">
-                    Terima kasih sudah berbelanja!<br>Selamat datang kembali 🙏
+                    {{ s.receipt_message || 'Terima kasih sudah berbelanja!' }}
                 </div>
             </div>
         </div>

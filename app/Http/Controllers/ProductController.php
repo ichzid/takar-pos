@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class ProductController extends Controller
@@ -52,7 +53,14 @@ class ProductController extends Controller
             'sell_price' => ['required', 'numeric', 'min:0'],
             'buy_price' => ['nullable', 'numeric', 'min:0'],
             'stock' => ['required', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'max:2048'],
         ]);
+
+        if ($request->hasFile('image')) {
+            $validated['image'] = $request->file('image')->store('products', 'public');
+        }
+
+        unset($validated['image_file']); // safety
 
         Product::create($validated);
 
@@ -78,7 +86,26 @@ class ProductController extends Controller
             'sell_price' => ['required', 'numeric', 'min:0'],
             'buy_price' => ['nullable', 'numeric', 'min:0'],
             'stock' => ['required', 'integer', 'min:0'],
+            'image' => ['nullable', 'image', 'max:2048'],
+            'remove_image' => ['nullable', 'boolean'],
         ]);
+
+        // Handle image removal
+        if ($request->boolean('remove_image') && $product->image) {
+            Storage::disk('public')->delete($product->image);
+            $validated['image'] = null;
+        }
+
+        // Handle new image upload
+        if ($request->hasFile('image')) {
+            // Delete old image if exists
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
+            $validated['image'] = $request->file('image')->store('products', 'public');
+        }
+
+        unset($validated['remove_image']);
 
         $product->update($validated);
 
@@ -96,6 +123,10 @@ class ProductController extends Controller
         }
 
         try {
+            // Delete image if exists
+            if ($product->image) {
+                Storage::disk('public')->delete($product->image);
+            }
             $product->delete();
         } catch (QueryException $exception) {
             if ((string) $exception->getCode() === '23000') {

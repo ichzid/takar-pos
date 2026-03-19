@@ -14,9 +14,16 @@ class CheckoutService
     /**
      * @param  array<int, array{product_id:int, quantity:int}>  $items
      */
-    public function checkout(int $userId, array $items, float $taxRate, float $paidAmount): Order
-    {
-        return DB::transaction(function () use ($userId, $items, $taxRate, $paidAmount) {
+    public function checkout(
+        int $userId,
+        array $items,
+        float $taxRate,
+        float $paidAmount,
+        float $discountAmount = 0.0,
+        ?string $customerName = null,
+        ?string $note = null,
+    ): Order {
+        return DB::transaction(function () use ($userId, $items, $taxRate, $paidAmount, $discountAmount, $customerName, $note) {
             $productIds = collect($items)->pluck('product_id')->all();
 
             $products = Product::query()
@@ -56,15 +63,16 @@ class CheckoutService
                 $subtotal += $lineTotal;
 
                 $lineItems[] = [
-                    'product' => $product,
+                    'product'    => $product,
                     'unit_price' => $unitPrice,
-                    'quantity' => $quantity,
+                    'quantity'   => $quantity,
                     'line_total' => $lineTotal,
                 ];
             }
 
-            $taxAmount = round($subtotal * $taxRate, 2);
-            $total = $subtotal + $taxAmount;
+            $discountAmount = max(0.0, min($discountAmount, $subtotal));
+            $taxAmount      = round(($subtotal - $discountAmount) * $taxRate, 2);
+            $total          = $subtotal - $discountAmount + $taxAmount;
 
             if ($paidAmount < $total) {
                 throw ValidationException::withMessages([
@@ -73,14 +81,17 @@ class CheckoutService
             }
 
             $order = Order::create([
-                'order_number' => 'ORD-' . Str::upper(Str::random(10)),
-                'user_id' => $userId,
-                'subtotal' => $subtotal,
-                'tax_amount' => $taxAmount,
-                'total' => $total,
-                'paid_amount' => $paidAmount,
-                'change_amount' => $paidAmount - $total,
-                'status' => 'paid',
+                'order_number'    => 'ORD-' . Str::upper(Str::random(10)),
+                'user_id'         => $userId,
+                'customer_name'   => $customerName ?: null,
+                'note'            => $note ?: null,
+                'discount_amount' => $discountAmount,
+                'subtotal'        => $subtotal,
+                'tax_amount'      => $taxAmount,
+                'total'           => $total,
+                'paid_amount'     => $paidAmount,
+                'change_amount'   => $paidAmount - $total,
+                'status'          => 'paid',
             ]);
 
             foreach ($lineItems as $line) {
@@ -88,10 +99,10 @@ class CheckoutService
                 $product = $line['product'];
 
                 OrderDetail::create([
-                    'order_id' => $order->id,
+                    'order_id'   => $order->id,
                     'product_id' => $product->id,
                     'unit_price' => $line['unit_price'],
-                    'quantity' => $line['quantity'],
+                    'quantity'   => $line['quantity'],
                     'line_total' => $line['line_total'],
                 ]);
 
