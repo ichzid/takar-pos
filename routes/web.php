@@ -84,21 +84,21 @@ Route::get('/dashboard', function () {
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/orders/export', [OrderController::class, 'export'])->name('orders.export');
+        Route::resource('categories', CategoryController::class)->except(['show']);
+        Route::resource('products', ProductController::class)->except(['show']);
+        Route::resource('users', UserController::class)->except(['show']);
+        Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
+        Route::post('/settings', [SettingController::class, 'update'])->name('settings.update');
+    });
+
     Route::middleware('role:admin,cashier')->group(function () {
         Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
         Route::get('/pos/products', [PosController::class, 'products'])->name('pos.products');
         Route::post('/pos/checkout', [PosController::class, 'checkout'])->name('pos.checkout');
         Route::get('/pos/receipt/{order}', [PosController::class, 'receipt'])->name('pos.receipt');
-    });
-
-    Route::middleware('role:admin')->group(function () {
-        Route::resource('categories', CategoryController::class)->except(['show']);
-        Route::resource('products', ProductController::class)->except(['show']);
-        Route::resource('users', UserController::class)->except(['show']);
-        Route::get('/orders/export', [OrderController::class, 'export'])->name('orders.export');
         Route::resource('orders', OrderController::class)->only(['index', 'show']);
-        Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
-        Route::post('/settings', [SettingController::class, 'update'])->name('settings.update');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

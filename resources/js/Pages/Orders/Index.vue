@@ -1,5 +1,5 @@
 <script setup>
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import Pagination from '@/Components/Pagination.vue';
@@ -13,7 +13,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
+    canExport: {
+        type: Boolean,
+        default: false,
+    },
 });
+
+const page = usePage();
 
 const currency = new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -46,7 +52,6 @@ function resetFilter() {
     router.get(route('orders.index'), {}, { replace: true });
 }
 
-// Export URL (attach current filters)
 const exportUrl = computed(() => {
     const params = new URLSearchParams();
     if (search.value) params.set('search', search.value);
@@ -72,6 +77,8 @@ const stats = computed(() => {
 const isFiltered = computed(
     () => search.value || dateFrom.value || dateTo.value,
 );
+
+const isCashier = computed(() => page.props.auth.user?.role === 'cashier');
 </script>
 
 <template>
@@ -82,7 +89,9 @@ const isFiltered = computed(
             <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
                 <div>
                     <h1 class="page-title">Transaksi</h1>
-                    <p class="page-subtitle">Riwayat semua transaksi penjualan</p>
+                    <p class="page-subtitle">
+                        {{ isCashier ? 'Riwayat transaksi yang Anda tangani' : 'Riwayat semua transaksi penjualan' }}
+                    </p>
                 </div>
 
                 <div class="flex w-full flex-col gap-2 xl:w-auto xl:flex-row xl:flex-nowrap xl:items-end xl:justify-end">
@@ -127,6 +136,7 @@ const isFiltered = computed(
                         </button>
 
                         <a
+                            v-if="canExport"
                             :href="exportUrl"
                             class="btn-secondary flex h-9 items-center gap-1.5 px-4 text-sm"
                             download

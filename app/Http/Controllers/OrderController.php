@@ -10,9 +10,12 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
+
         $orders = Order::query()
             ->with('user')
             ->withCount('details')
+            ->when($user?->isCashier(), fn ($q) => $q->where('user_id', $user->id))
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->search;
                 $q->where(function ($inner) use ($search) {
@@ -29,11 +32,18 @@ class OrderController extends Controller
         return Inertia::render('Orders/Index', [
             'orders'  => $orders,
             'filters' => $request->only(['search', 'date_from', 'date_to']),
+            'canExport' => $user?->isAdmin() ?? false,
         ]);
     }
 
-    public function show(Order $order)
+    public function show(Request $request, Order $order)
     {
+        $user = $request->user();
+
+        if ($user?->isCashier() && $order->user_id !== $user->id) {
+            abort(403);
+        }
+
         $order->load(['details.product', 'user']);
 
         return Inertia::render('Orders/Show', [

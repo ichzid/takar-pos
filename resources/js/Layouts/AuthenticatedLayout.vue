@@ -76,7 +76,7 @@ const navSections = computed(() => {
                     label: 'Transaksi',
                     href: route('orders.index'),
                     active: 'orders.*',
-                    adminOnly: true,
+                    adminOnly: false,
                     icon: 'clipboard',
                 },
             ],
